@@ -305,10 +305,18 @@ class LookupTable(utils.JSONMixin):
 
             # Inverse CDF by linear interpolation, as ``np.interp``
             target = rng.uniform(0, cumulative[:, -1:], (n_chunk, n_draws))
-            ind = np.clip(
-                (cumulative[:, np.newaxis] < target[..., np.newaxis]
-                 ).sum(axis=-1),
-                1, grid.shape[1] - 1)
+            if n_draws <= 16:
+                # Few draws per element: compare against the whole
+                # grid at once, memory ~ n_chunk * n_draws * grid size
+                ind = (cumulative[:, np.newaxis] < target[..., np.newaxis]
+                       ).sum(axis=-1)
+            else:
+                # Many draws per element: binary search row by row,
+                # same result (side='left' counts cumulative < target)
+                ind = np.empty(target.shape, int)
+                for i in range(n_chunk):
+                    ind[i] = np.searchsorted(cumulative[i], target[i])
+            ind = np.clip(ind, 1, grid.shape[1] - 1)
             rows = np.arange(n_chunk)[:, np.newaxis]
             cum_left = cumulative[rows, ind - 1]
             cum_right = cumulative[rows, ind]
